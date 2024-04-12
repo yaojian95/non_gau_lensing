@@ -5,7 +5,8 @@ from plancklens import utils
 import os
 
 cls_path = '/global/homes/j/jianyao/non_gau_lensing/theory/cls/'
-w = lambda ell : ell ** 2 * (ell + 1.) ** 2 * 0.5 / np.pi * 1e7
+# w = lambda ell : ell ** 2 * (ell + 1.) ** 2 * 0.5 / np.pi * 1e7
+w = lambda ell : ell ** 2 * (ell + 1.) ** 2*0.25
 
 cl_unl = utils.camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lenspotentialCls.dat'))
 cl_len = utils.camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lensedCls.dat'))
@@ -195,17 +196,24 @@ bins = [2, 21, 40, 66, 101, 145, 199, 264, 339, 426, 526, 638, 763, 1000]
 ell = np.arange(2, 1000)
 ell_binned, true_binned =  bin_cell(cl_unl['pp'][ell]* w(ell), lmax = 1000, bins = bins, ell_2=False)    
 
-def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', plot_mf_cl = False, from_fg_res = False):
+def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', plot_mf_cl = False, from_fg_res = False, add_foreground = None):
     '''
     results_all: output from run_qe function for foreground cases, assumed the mean field is already calculated. 
     set nsim = [200, 500] for run_qe.
     plot_mf_cl only works for subtract_mf = cl case.
+    add_foreground: **Mismatch** effect. set this to a foreground case to use this mf to be the mf in the results_all.
     '''
-    
+   
     if qe_key.startswith('x'):
-        plot_variance = plot_variance_x
-        
+        _plot_variance = plot_variance_x
+    else:
+        _plot_variance = plot_variance # o.w. python will set plot_variance as local variable and the global 'plot_variance' defined below shoule not be used.
+    
     lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s_cinv/'%experiment
+    
+    if add_foreground:
+        TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(add_foreground, 100, 2000, 'p_eb', lmaxBmode)
+    
     print('plot from dir: %s'%lenre_dir)
     results_all = list(results_all)
     fsky = results_all.pop(4)
@@ -218,17 +226,19 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
     labels = [dicts[case] for case in cases]
     
     for fore in list(zip(*results_all)):
-        TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
-        data_errors.append(get_variance(fore, fsky, subtract_mf = 'alm', mf= TEMP+'/mean_field_%s/mf_200_%s_%s.fits'%(qe_key, cases[case_i], qe_key), Nsim_mf = 0))
+        if not add_foreground:
+            TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
+        data_errors.append(get_variance(fore, fsky, subtract_mf = 'alm', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0))
         case_i += 1
-    plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at alm, lmaxBmode = %s'%(qe_key, lmaxBmode))
+    _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at alm, lmaxBmode = %s'%(qe_key, lmaxBmode))
 
     case_i = 0
     data_errors = []
     for fore in list(zip(*results_all)):
-        TEMP =  lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
+        if not add_foreground:
+            TEMP =  lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
         
-        error_mf = get_variance(fore, fsky, subtract_mf = 'cl', mf= TEMP+'/mean_field_%s/mf_200_%s_%s.fits'%(qe_key, cases[case_i], qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl)
+        error_mf = get_variance(fore, fsky, subtract_mf = 'cl', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl)
         
         if plot_mf_cl:
             data_error, mf_cl = error_mf 
@@ -240,22 +250,32 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
         case_i += 1
     
     if plot_mf_cl:
-        plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), mf_cls = mf_cls)
+        mf_data = 'mean_filed_lmin_%s_lmax_%s_%s_lmax_Bmode_%s.dat'%(100, 2000, qe_key, lmaxBmode)
+        if not os.path.exists(mf_data):
+            with open(mf_data, 'w') as f:
+                for s in cases:
+                    f.write(s + ' ')
+                f.write('\n')
+                for i in range(len(mf_cls[0])):
+                    f.write(str(ell[i]) + ' ' + str(mf_cls[0][i]) + ' ' + str(mf_cls[1][i]) + ' ' + str(mf_cls[2][i]) + ' ' + str(mf_cls[3][i]) + '\n')
+                
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), mf_cls = mf_cls)
+        
     else:
-        plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode))
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode))
     
     if from_fg_res:
         data_errors = []
         for fore in list(zip(*results_all)):
             data_errors.append(get_variance(fore, fsky, Nsim_mf = 0, from_fg_res = True))
-        plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting FG res bias, lmaxBmode = %s'%(qe_key, lmaxBmode))
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting FG res bias, lmaxBmode = %s'%(qe_key, lmaxBmode))
 
         data_errors_fg_res = []
         for fore in list(zip(*results_all)):
             data_errors_fg_res.append(get_variance_fg_res(fore), fsky)
-        plot_variance(ell, data_errors_fg_res, labels = labels, kind = 'bar', title = '%s, Cl_phiphi from fg_res, lmaxBmode = %s'%(qe_key, lmaxBmode), set_ylim=False)
-    
-    
+        _plot_variance(ell, data_errors_fg_res, labels = labels, kind = 'bar', title = '%s, Cl_phiphi from fg_res, lmaxBmode = %s'%(qe_key, lmaxBmode), set_ylim=False)
+
+
 def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, return_mf_cl = False, from_fg_res = False):
     '''
     Get errors for ONE foreground case
@@ -385,40 +405,6 @@ def get_variance_fg_res(results, fsky):
     
     return [xdata, ydata, xerr, yerr]
 
-
-def plot_mismatch_errors(results_all, lmaxBmode, add_foreground, experiment = 'SO_LAT_MASK'):
-    '''
-    results_all: output from run_qe function for three cases
-    '''
-    
-    # add_foreground = 'd9'
-    TEMP = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s/cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(experiment, add_foreground, 100, 2000, 'p_eb', lmaxBmode)
-    
-    results_all = list(results_all)
-    results_all.pop(4)
-
-    a, b, c = list(zip(*results_all))
-    ell = a[0]
-    data_errors = []
-    for fore in [a,c,b]:
-        data_errors.append(get_variance(fore, subtract_mf = 'alm', mf= TEMP+'/mean_field/mf_200_%s.fits'%add_foreground, Nsim_mf = 200))
-    plot_variance(ell, data_errors, labels = ['P_d9', 'F_d9', 'G_d9'], kind = 'bar', title = 'Subtracting MF of %s at alm, lmaxBmode = %s'%(add_foreground, lmaxBmode), set_ylim=False)
-
-    data_errors = []
-    for fore in [a,c,b]:
-        data_errors.append(get_variance(fore, subtract_mf = 'cl', mf= TEMP+'/mean_field/mf_200_%s.fits'%add_foreground, Nsim_mf = 200))
-    plot_variance(ell, data_errors, labels = ['P_d9', 'F_d9', 'G_d9'], kind = 'bar', title = 'Subtracting MF of %s at cl, lmaxBmode = %s'%(add_foreground, lmaxBmode))
-
-#     data_errors = []
-#     for fore in [a,c,b]:
-#         data_errors.append(get_variance(fore, Nsim_mf = 200, from_fg_res = True))
-#     plot_variance(ell, data_errors, labels = ['P_d9', 'F_d9', 'G_d9'], kind = 'bar', title = 'Subtracting FG res bias, lmaxBmode = %s'%lmaxBmode)
-
-#     data_errors_fg_res = []
-#     for fore in [a,c,b]:
-#         data_errors_fg_res.append(get_variance_fg_res(fore))
-#     plot_variance(ell, data_errors_fg_res, labels = ['P_d9', 'F_d9', 'G_d9'], kind = 'bar', title = 'Cl_phiphi from fg_res, lmaxBmode = %s'%lmaxBmode, set_ylim=False)
-
 def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None):
     '''
     data_error: [[xdata, ydata, xerr, yerr]]
@@ -471,12 +457,14 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
         axes[0].legend(frameon = False)
     axes[0].set_xlim(8, 1000)
     if set_ylim:
-        axes[0].set_ylim(1e-3, 10)
+        # axes[0].set_ylim(1e-3, 10)
+        axes[0].set_ylim(1e-10, 1e-6)
         # axes[0].set_ylim(1e-3,4e1)
     axes[0].set_yscale(yscale)
     axes[0].set_xscale(xscale)
     # axes[0].set_yticks(np.arange(0.2, 1.8, 0.2))
-    axes[0].set_ylabel('$L^2 (L + 1)^2 C_L^{\phi\phi}$  [$x10^7$]', fontsize=12)
+    # axes[0].set_ylabel('$L^2 (L + 1)^2 C_L^{\phi\phi}$  [$x10^7$]', fontsize=12)
+    axes[0].set_ylabel('$1/4 L^2 (L + 1)^2 C_L^{\phi\phi}$', fontsize=12)
     axes[1].set_xlabel('$L$', fontsize=12)
     axes[0].set_title(title)
     axes[1].set_ylabel(r'$(C_{\ell}^{O} - C_{\ell}^{I})/\sigma$', fontsize=12)

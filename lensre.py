@@ -175,10 +175,6 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
                 qlm = qlms_dd.get_sim_qlm(qe_key, mc)                                     
                 qlms.append(qlm)
                 
-                # if mc == nsims[0]:
-                nhl_data = nhl_dd.get_sim_nhl(mc, qe_key, qe_key)
-                nhl_datas.append(nhl_data)
-                
                 if from_fg_res:
                     
                     qlm_fg = qlms_dd_fg.get_sim_qlm(qe_key, mc)
@@ -193,7 +189,10 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
                     qresp_dat = qresp_dd.get_response(qe_key, 'p')
                     # Estimator normalization is the inverse response:
                     qnorm = utils.cli(qresp_dat)
-                    qnorms.append(qnorm)    
+                    qnorms.append(qnorm)   
+                    
+                    nhl_data = nhl_dd.get_sim_nhl(mc, qe_key, qe_key)
+                    nhl_datas.append(nhl_data)
                     
         ell = np.arange(2 if qe_key[0] == 'x' else 2, lmax_qlm) # qnorms has very large number for \ell = 1; 2023/12/26
         
@@ -223,8 +222,8 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
             dir_mf = TEMP+'/mean_field_%s'%qe_keys[0] #once mf are saved, the 0:200 realizations can be left alone, when estimating errors
             if not os.path.exists(dir_mf):
                 os.makedirs(dir_mf)
-                hp.write_alm(dir_mf + '/mf_200_%s_%s.fits'%(add_foreground, qe_keys[0]), np.mean(qlms[0:200], axis = 0))
-                hp.write_alm(dir_mf + '/mf_100_%s_%s.fits'%(add_foreground, qe_keys[0]), np.mean(qlms[0:100], axis = 0))
+                hp.write_alm(dir_mf + '/mf_200_%s.fits'%(qe_keys[0]), np.mean(qlms[0:200], axis = 0))
+                hp.write_alm(dir_mf + '/mf_100_%s.fits'%(qe_keys[0]), np.mean(qlms[0:100], axis = 0))
             
     if from_fg_res:
         
