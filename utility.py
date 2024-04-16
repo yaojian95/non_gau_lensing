@@ -4,9 +4,11 @@ import healpy as hp
 from plancklens import utils
 import os
 
+from binning import binning, multipole_binning
+
 cls_path = '/global/homes/j/jianyao/non_gau_lensing/theory/cls/'
-# w = lambda ell : ell ** 2 * (ell + 1.) ** 2 * 0.5 / np.pi * 1e7
-w = lambda ell : ell ** 2 * (ell + 1.) ** 2*0.25
+w = lambda ell : ell ** 2 * (ell + 1.) ** 2 * 0.5 / np.pi * 1e7
+# w = lambda ell : ell ** 2 * (ell + 1.) ** 2*0.25
 
 cl_unl = utils.camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lenspotentialCls.dat'))
 cl_len = utils.camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lensedCls.dat'))
@@ -189,14 +191,10 @@ def plot_snr(ells, cl_pp_input, results, labels):
     
     plt.legend()
     
-dicts = {'no_fore':'No', 'd9':'P_d9', 'forse3_Gaussiand9':'G_d9', 'forse3_d9':'F_d9'}
+dicts = {'no_fore':'No', 'd9':'P_d9', 'forse3_Gaussiand9':'G_d9', 'forse3_d9':'F_d9'} 
 
-bins = [2, 21, 40, 66, 101, 145, 199, 264, 339, 426, 526, 638, 763, 1000]
-# ell = results_all[0][0]
-ell = np.arange(2, 1000)
-ell_binned, true_binned =  bin_cell(cl_unl['pp'][ell]* w(ell), lmax = 1000, bins = bins, ell_2=False)    
-
-def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', plot_mf_cl = False, from_fg_res = False, add_foreground = None):
+def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', plot_mf_cl = False, from_fg_res = False, add_foreground = None, 
+                        return_error = False, binning = ['planck', None], true_binned = None):
     '''
     results_all: output from run_qe function for foreground cases, assumed the mean field is already calculated. 
     set nsim = [200, 500] for run_qe.
@@ -221,16 +219,15 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
     ell = results_all[0][0]
     data_errors = []
     mf_cls = []
-    case_i = 0
-
     labels = [dicts[case] for case in cases]
     
-    for fore in list(zip(*results_all)):
-        if not add_foreground:
-            TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
-        data_errors.append(get_variance(fore, fsky, subtract_mf = 'alm', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0))
-        case_i += 1
-    _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at alm, lmaxBmode = %s'%(qe_key, lmaxBmode))
+    # case_i = 0
+    # for fore in list(zip(*results_all)):
+    #     if not add_foreground:
+    #         TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
+    #     data_errors.append(get_variance(fore, fsky, subtract_mf = 'alm', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0, binning = binning))
+    #     case_i += 1
+    # _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at alm, lmaxBmode = %s'%(qe_key, lmaxBmode), true_binned = true_binned)
 
     case_i = 0
     data_errors = []
@@ -238,7 +235,7 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
         if not add_foreground:
             TEMP =  lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
         
-        error_mf = get_variance(fore, fsky, subtract_mf = 'cl', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl)
+        error_mf = get_variance(fore, fsky, subtract_mf = 'cl', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl, binning = binning)
         
         if plot_mf_cl:
             data_error, mf_cl = error_mf 
@@ -259,24 +256,28 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
                 for i in range(len(mf_cls[0])):
                     f.write(str(ell[i]) + ' ' + str(mf_cls[0][i]) + ' ' + str(mf_cls[1][i]) + ' ' + str(mf_cls[2][i]) + ' ' + str(mf_cls[3][i]) + '\n')
                 
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), mf_cls = mf_cls)
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), mf_cls = mf_cls, true_binned = true_binned)
         
     else:
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode))
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), true_binned = true_binned)
     
     if from_fg_res:
         data_errors = []
         for fore in list(zip(*results_all)):
-            data_errors.append(get_variance(fore, fsky, Nsim_mf = 0, from_fg_res = True))
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting FG res bias, lmaxBmode = %s'%(qe_key, lmaxBmode))
+            data_errors.append(get_variance(fore, fsky, Nsim_mf = 0, from_fg_res = True, binning = binning))
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting FG res bias, lmaxBmode = %s'%(qe_key, lmaxBmode), true_binned = true_binned)
 
         data_errors_fg_res = []
         for fore in list(zip(*results_all)):
-            data_errors_fg_res.append(get_variance_fg_res(fore), fsky)
-        _plot_variance(ell, data_errors_fg_res, labels = labels, kind = 'bar', title = '%s, Cl_phiphi from fg_res, lmaxBmode = %s'%(qe_key, lmaxBmode), set_ylim=False)
+            data_errors_fg_res.append(get_variance_fg_res(fore, binning = binning), fsky)
+        _plot_variance(ell, data_errors_fg_res, labels = labels, kind = 'bar', title = '%s, Cl_phiphi from fg_res, lmaxBmode = %s'%(qe_key, lmaxBmode), set_ylim=False, true_binned = true_binned)
+        
+    if return_error:
+        return data_error
 
 
-def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, return_mf_cl = False, from_fg_res = False):
+def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, return_mf_cl = False, 
+                 binning = ['my',None, None], from_fg_res = False):
     '''
     Get errors for ONE foreground case
     
@@ -288,20 +289,33 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
     subtract_mf: 'alm' or 'cl' or None, whether subtracting the mean field or not; If not None, subtracting at the alm space or cl space
     mf: str, 0, or None; If str, input mean_field_alms will be loaded and to be subtracted;
     Nsim_mf: int or None, number of realizations in the resutls used to estimate mean field ; If int, the former Nsim_mf will be used ([0:Nsim_mf])
+    binning: my simple binning scheme or planck binning scheme; 'my' or 'planck'. ['my', bin_cell, bin_edge] or ['planck', plk_binner, bin_edge], or ['toshiyan', binning, binner]; plk_binner is an instance of ffp10_binner; 2024/4/14; NOT implemented for fg_res yet
     
     '''
     
     ell, qlms, nhl_data, qnorm = results[0], results[1], results[2][0], results[3]
+    ell = np.arange(1000); # 2024/4/14: bin_cell starts from 2. so the input should have ell = 0 and 1.
     
+    kswitch = w(ell)
     fsky = fsky
-    weights_phi = qnorm[ell] ** 2 / fsky * w(ell)
-    n0 = nhl_data[ell] * qnorm[ell] ** 2 * w(ell)
+    weights_phi = qnorm[ell] ** 2 / fsky 
+    n0 = nhl_data[ell] * qnorm[ell] ** 2
+    
+    func = binning[1]
+    
+    if binning[0] == 'toshiyan':
+        bins = binning[2].bp
+        
+    else:
+        bins = binning[2]
+        
+    delta_ell = [(y - x)/2 - 0.5 for x, y in zip(bins[0:-1], bins[1:])]
     
     nstart = Nsim_mf
     if from_fg_res:
         qlms_fg = results[4] # also nsim together
         nhl_data_fg, qnorm_fg  = results[5][0], results[6]
-        n0_fg = nhl_data_fg[ell] * qnorm_fg[ell] ** 2 * w(ell)    
+        n0_fg = nhl_data_fg[ell] * qnorm_fg[ell] ** 2 
         
     else:
         assert subtract_mf is not None, subtract_mf
@@ -312,8 +326,6 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
             mf_alm = np.mean(qlms[:Nsim_mf], axis = 0)
     
         mf_cl = (hp.alm2cl(mf_alm)[ell])*weights_phi
-    
-    bins = [2, 21, 40, 66, 101, 145, 199, 264, 339, 426, 526, 638, 763, 1000]
     
     cleaned_my = []
     for i in range(nstart, len(qlms)):
@@ -333,25 +345,37 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
         
         else:
             returned_fg = 0
+        
+        if binning[0] == 'my':
+            ell_binned, cleaned_binned_i =  func((cleaned_my_i - returned_fg)*kswitch, lmax = bins[-1], bins = bins, ell_2=False)  
             
-        ell_binned, cleaned_binned_i =  bin_cell(cleaned_my_i - returned_fg, lmax = 1000, bins = bins, ell_2=False)    
+        elif binning[0] == 'planck': # kswitch is already included in planck binner
+            ell_binned, cleaned_binned_i =  func(cleaned_my_i - returned_fg) 
+        
+        elif binning[0] == 'toshiyan':
+            assert len(binning) == 3, len(binning)
+            ell_binned, cleaned_binned_i =  binning[2].bc, func((cleaned_my_i - returned_fg)*kswitch, binning[2]) 
+            
         cleaned_my.append(cleaned_binned_i)
         
     cleaned_mean = np.mean(cleaned_my, axis = 0)
     cleaned_std = np.std(cleaned_my, axis = 0)
 
-    delta_ell = [(y - x)/2 - 0.5 for x, y in zip(bins[0:-1], bins[1:])]
-    # 0.5 for visuallization 
-
     xdata = np.array(ell_binned)
-    ydata = cleaned_mean[0]
+    # xerr = np.array([delta_ell, delta_ell])
+    xerr = np.array([np.zeros_like(delta_ell), np.zeros_like(delta_ell)])
     
-    yerr = np.array([cleaned_std[0], cleaned_std[0]])
-    xerr = np.array([delta_ell, delta_ell])
+    if binning[0] == 'my':
+        ydata = cleaned_mean[0]
+        yerr = np.array([cleaned_std[0], cleaned_std[0]])
+        
+    else:
+        ydata = cleaned_mean
+        yerr = np.array([cleaned_std, cleaned_std])        
     
     if return_mf_cl:
         assert not from_fg_res, 'mean field and fg_res should not be estimated simultaneously.'
-        return [xdata, ydata, xerr, yerr], mf_cl
+        return [xdata, ydata, xerr, yerr], mf_cl*kswitch
     
     return [xdata, ydata, xerr, yerr]
 
@@ -405,7 +429,7 @@ def get_variance_fg_res(results, fsky):
     
     return [xdata, ydata, xerr, yerr]
 
-def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None):
+def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, true_binned = None):
     '''
     data_error: [[xdata, ydata, xerr, yerr]]
     kind: box or bar
@@ -443,28 +467,28 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
     if kind == 'bar':
         for i in range(len(data_error)):
             facecolor = colors[i]
-            axes[0].errorbar(data_error[i][0] + i*3, data_error[i][1], xerr = data_error[i][2][0], yerr = data_error[i][3][0], 
-                          ecolor = colors[i], ls='none', label = '%s'%labels[i])
+            axes[0].errorbar(data_error[i][0] + i*0.5, data_error[i][1], yerr = data_error[i][3][0], 
+                          ecolor = colors[i], label = '%s'%labels[i], fmt='o') #xerr = data_error[i][2][0],
             
             if mf_cls:
-                axes[0].semilogx(ell, mf_cls[i], color = facecolor, ls = '--')
+                axes[0].semilogx(ell, mf_cls[i][ell], color = facecolor, ls = '--')
             
-            axes[1].scatter(data_error[i][0]  + i*3, (data_error[i][1] - true_binned[0])/data_error[i][3][0], s = 20, c = facecolor, alpha = 0.8)
+            axes[1].scatter(data_error[i][0]  + i*0.5, (data_error[i][1] - true_binned)/data_error[i][3][0], s = 20, c = facecolor, alpha = 0.8)
             
             # axes[1].errorbar(data_error[i][0] + i*3, (data_error[i][1] - true_binned[0])/true_binned[0]*100, xerr = data_error[i][2][0], 
                              # yerr = data_error[i][3][0]/true_binned[0]*100, ecolor = colors[i], ls='none')
             
         axes[0].legend(frameon = False)
-    axes[0].set_xlim(8, 1000)
+    axes[0].set_xlim(2, 1000)
     if set_ylim:
-        # axes[0].set_ylim(1e-3, 10)
-        axes[0].set_ylim(1e-10, 1e-6)
+        axes[0].set_ylim(1e-3, 10)
+        # axes[0].set_ylim(1e-10, 1e-6)
         # axes[0].set_ylim(1e-3,4e1)
     axes[0].set_yscale(yscale)
     axes[0].set_xscale(xscale)
     # axes[0].set_yticks(np.arange(0.2, 1.8, 0.2))
-    # axes[0].set_ylabel('$L^2 (L + 1)^2 C_L^{\phi\phi}$  [$x10^7$]', fontsize=12)
-    axes[0].set_ylabel('$1/4 L^2 (L + 1)^2 C_L^{\phi\phi}$', fontsize=12)
+    axes[0].set_ylabel('$L^2 (L + 1)^2 C_L^{\phi\phi}$  [$x10^7$]', fontsize=12)
+    # axes[0].set_ylabel('$1/4 L^2 (L + 1)^2 C_L^{\phi\phi}$', fontsize=12)
     axes[1].set_xlabel('$L$', fontsize=12)
     axes[0].set_title(title)
     axes[1].set_ylabel(r'$(C_{\ell}^{O} - C_{\ell}^{I})/\sigma$', fontsize=12)
