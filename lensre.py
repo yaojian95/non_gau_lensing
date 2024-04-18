@@ -27,7 +27,7 @@ cl_weight['bb'] *= 0.
 #: CMB spectra entering the QE weights (the spectra multplying the inverse-variance filtered maps in the QE legs) 
 
 def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_qlm = 1000, nsim = 1, lmax_Bmode = None, from_fg_res = False, which_fg = None, 
-          experiment = 'SO_LAT_MASK'):
+          experiment = 'SO_LAT'):
     '''
     2024/4/4: now no_fore case will be compatible with other foreground cases, since no_fore will have the same sigma with 'PySM_d9' case. 
     Parameters
@@ -46,6 +46,7 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
     from_fg_res: test the lensing estimator response from fg_res
     which_fg: Bool; If True, use the bias from another kind of dust 
     compare_mf: Bool; In the case of fg_res, if True, also return the mean-field from 300 realizations
+    experiment: 'SO_LAT'/'S4_LAT' which will in fact be 'SO_LAT_MASK'/'S4_LAT_MASK'
     
     
     Returns
@@ -76,24 +77,22 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
     results_n0_fg = []
     results_qnorms_fg = []
     
-    mask = '/pscratch/sd/j/jianyao/data_lensing/SO_LAT_mask_1024.fits'
+    mask = '/pscratch/sd/j/jianyao/data_lensing/%s_mask_1024.fits'%experiment
     
     for add_foreground in cases:
 
         qnorms = []; nhl_datas = []; qlms = []  
         qlms_fg = []; nhl_datas_fg = []
 
-        dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s/'%experiment # SO LAT
+        dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%experiment # SO_LAT/S4_MASK
         
         if add_foreground == 'no_fore':
             inv_with_mask = dir_cleaned_cmb + 'Inverse_noise_variance_map_mask_zeros_%s.npy'%'d9' # no foreground cases uses residual noise of pysm_d9 case
         else:
             inv_with_mask = dir_cleaned_cmb + 'Inverse_noise_variance_map_mask_zeros_%s.npy'%add_foreground
-            
-        maskpaths = ['/pscratch/sd/j/jianyao/data_lensing/SO_LAT_mask_1024.fits']
 
-        ninv_t = [np.load(inv_with_mask)[0]] + maskpaths
-        ninv_Q = [[np.load(inv_with_mask)[1]] + maskpaths]         
+        ninv_t = [np.load(inv_with_mask)[0]] + [mask]
+        ninv_Q = [[np.load(inv_with_mask)[1]] + [mask]]         
 
         TEMP = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s_cinv/cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(experiment, add_foreground, lmin_ivf, lmax_ivf, qe_keys_dir[0], lmax_Bmode)
         
@@ -239,7 +238,7 @@ class cmb_len(object):
         
         if add_foreground != 'no_fore':
 
-            dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s/'%experiment # SO LAT
+            dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%experiment # SO LAT
             
             # get an estimation of lensing field from foreground residuals: to test the estimator response to the fg_res
             if from_fg_res: 
@@ -251,8 +250,8 @@ class cmb_len(object):
         
         elif add_foreground == 'no_fore':
             
-            dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cmb_noise_only/SO_LAT_masked/'
-            self.alms = dir_cleaned_cmb + 'CMB_noise_alms_from_SO_LAT_masked_%s_nside_1024'%(add_foreground)
+            dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cmb_noise_only/%s_MASK/'%experiment
+            self.alms = dir_cleaned_cmb + 'CMB_noise_alms_from_%s_masked_%s_nside_1024'%(experiment, add_foreground)
         # self.dirs = os.environ["data"] + 'cmb_plus_%s'%self.add_foreground
         
     def hashdict(self):
