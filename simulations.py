@@ -35,10 +35,17 @@ class simulations:
         self.fwhms = instrument['fwhm']
         self.end = e_n_d
         
+        self.tag = instrument['experiment'][0]
+        
         if mask is None:
             mask = np.ones(12*nside**2)
             
         self.mask = mask
+        
+        if int(sum(mask)/len(mask)) == 1:
+            self.name = ""
+        else:
+            self.name = "_masked"
         
     def get_all(self, add_foreground = 'd0', noise = 'alms', use_phi_alm = False, index = 0):
 
@@ -53,6 +60,7 @@ class simulations:
         cmb_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/cmb/'
         
         if not os.path.exists(cmb_dir + 'unlensed_CMB_map_%04d.fits'%index):
+            # assuming both lensed CMB and unlensed CMB maps are not saved
             
             cl_unl = camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lenspotentialCls.dat'))
             geom_info = ('healpix', {'nside':self.nside}) # Geometry parametrized as above, this is the default
@@ -98,68 +106,84 @@ class simulations:
         Nf = self.fres.size
         cmb_maps = np.repeat(self.cmb_len[np.newaxis, :, :], Nf, axis = 0)
         
-        ########## simulate noise ##############
-        noise_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/noise/'
-        if not os.path.exists(noise_dir + 'noise_freq_%04d.npy'%index):
-            noise_maps = get_noise_realization(self.nside, instrument, unit='uK_CMB')
-            
-            np.save(noise_dir + 'noise_freq_%04d.npy'%index, noise_maps)
-            
-        else:
-            noise_maps = np.load(noise_dir + 'noise_freq_%04d.npy'%index)
-            
-        noise_alms = []
-        
-        if self.end is True: 
-            noise_maps_end = []
-            N = 20
-            for n in range(N):
-                noise_map_i = get_noise_realization(self.nside, instrument, unit='uK_CMB')
-                noise_maps_end.append(noise_map_i)
+        ########## simulate noise ##############        
+        if add_foreground != 'no_fore': 
+            noise_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/noise/%s/'%self.tag
+            if not os.path.exists(noise_dir + 'noise_freq_%04d.npy'%index):
+                noise_maps = get_noise_realization(self.nside, instrument, unit='uK_CMB')
+
+                np.save(noise_dir + 'noise_freq_%04d.npy'%index, noise_maps)
+
+            else:
+                noise_maps = np.load(noise_dir + 'noise_freq_%04d.npy'%index)
+
+            if self.end is True: 
+                noise_maps_end = []
+                N = 20
+                for n in range(N):
+                    noise_map_i = get_noise_realization(self.nside, instrument, unit='uK_CMB')
+                    noise_maps_end.append(noise_map_i)
+
+                self.extra_noise = noise_maps_end
+                self.N = N
                 
-            self.extra_noise = noise_maps_end
-            self.N = N
-        
+        elif add_foreground == 'no_fore': 
+            # if no foreground, the noise level should be at the level of residual noise of the case with foreground, after component separation 
+            # we could use the noise_ilc_maps directly!!! 2024-4-4
+            noise_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%self.tag # this case for the SO_LAT_masked case
+            noise_alm = hp.read_alm(noise_dir + 'Noise_ilc_alms_from_%s_d9_HILC_lbins_42x50_lmax_2050_nside_1024_%04d.fits'%(self.tag, index), hdu = [1, 2, 3])
+            
         ######## simulate foreground ############
-        fg_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/foreground/'
-        if not os.path.exists(fg_dir + 'fg_%s_freq_%04d.npy'%(add_foreground, 0)): # for now, only have one realization for foreground
-            
-            if add_foreground.startswith('d'):
-                # for pysm3 pre-defined models
-                sky = pysm3.Sky(nside, preset_strings = [add_foreground])
-                foreground = get_observation(instrument, sky = sky, nside=nside, noise=False, unit='uK_CMB')
+        
+        if add_foreground != 'no_fore':
+            fg_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/foreground/%s/'%self.tag
 
-            elif add_foreground.startswith('forse'):
+            if 'Gaussian' in add_foreground:
+                fg_name = fg_dir + 'fg_%s%s_freq_%04d.npy'%(add_foreground, self.name, 0)
+            else:
+                fg_name = fg_dir + 'fg_%s_freq_%04d.npy'%(add_foreground, 0)
 
-                pysm_model = add_foreground.split('_')[1]
+            if not os.path.exists(fg_name): # for now, only have one realization for foreground
 
-                foreground = self.rescale_forse(self.fres, pysm_model = pysm_model)
+                if add_foreground.startswith('d'):
+                    # for pysm3 pre-defined models
+                    sky = pysm3.Sky(self.nside, preset_strings = [add_foreground])
+                    foreground = get_observation(instrument, sky = sky, nside=self.nside, noise=False, unit='uK_CMB')
 
-            elif add_foreground == 'no_fore':
-                # test case for only noise
-                foreground = np.zeros_like(cmb_maps)
+                elif add_foreground.startswith('forse'):
+
+                    pysm_model = add_foreground.split('_')[1]
+
+                    foreground = self.rescale_forse(self.fres, pysm_model = pysm_model)
+
+                np.save(fg_name, foreground)
+
+            else:
+                foreground = np.load(fg_name)
                 
-            np.save(fg_dir + 'fg_%s_freq_%04d.npy'%(add_foreground, 0), foreground)
-                              
-        else:
-            foreground = np.load(fg_dir + 'fg_%s_freq_%04d.npy'%(add_foreground, 0))
-                
-        map_all = cmb_maps + foreground
-        for i in range(Nf):
-            # map_all[i] = pysm3.apply_smoothing_and_coord_transform(map_all[i], fwhm=self.fwhms[i]*u.arcmin) + self.noise_maps[i]
-            map_all[i] = hp.smoothing(map_all[i], fwhm = self.fwhms[i]/180/60*np.pi) + noise_maps[i]
-            foreground[i] = hp.smoothing(foreground[i], fwhm = self.fwhms[i]/180/60*np.pi)
-            
-            if noise == 'alms':
-                noise_alms.append(hp.map2alm(np.where(self.mask== 0, hp.UNSEEN, noise_maps[i])))
-                
-        if noise == 'maps':
-            self.noise_maps = np.where(self.mask== 0, hp.UNSEEN, noise_maps)
-        elif noise == 'alms':
-            self.noise_alms = noise_alms
-                
-        self.map_all = np.where(self.mask== 0, hp.UNSEEN, map_all)
-        self.fg = np.where(self.mask== 0, hp.UNSEEN, foreground)
+            map_all = cmb_maps + foreground            
+        
+            noise_alms = []
+            for i in range(Nf):
+
+                # map_all[i] = pysm3.apply_smoothing_and_coord_transform(map_all[i], fwhm=self.fwhms[i]*u.arcmin) + self.noise_maps[i]
+                map_all[i] = hp.smoothing(map_all[i], fwhm = self.fwhms[i]/180/60*np.pi) + noise_maps[i]
+                foreground[i] = hp.smoothing(foreground[i], fwhm = self.fwhms[i]/180/60*np.pi)
+
+                if noise == 'alms':
+                    noise_alms.append(hp.map2alm(np.where(self.mask== 0, hp.UNSEEN, noise_maps[i])))
+
+            if noise == 'maps':
+                self.noise_maps = np.where(self.mask== 0, hp.UNSEEN, noise_maps)
+            elif noise == 'alms':
+                self.noise_alms = noise_alms
+
+            self.map_all = np.where(self.mask== 0, hp.UNSEEN, map_all)
+
+            self.fg = np.where(self.mask== 0, hp.UNSEEN, foreground)
+                    
+        else: # for the case of no foreground, we can just use one pure CMB map, rather than CMB maps at different frequency.
+            self.map_all = self.cmb_len + hp.alm2map(noise_alm, nside=self.nside)
         
     def rescale_forse(self, fres, pysm_model = 'd0'):
         '''
@@ -305,8 +329,8 @@ class simulations:
             my_dust = pysm3.ModifiedBlackBody(
                 nside = self.nside,
                 map_I = "pysm_2/dust_t_new.fits",
-                map_Q = dust_dir + "Gaussian_forse_dust_Q_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
-                map_U = dust_dir + "Gaussian_forse_dust_U_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
+                map_Q = dust_dir + "Gaussian_forse_dust_Q_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
+                map_U = dust_dir + "Gaussian_forse_dust_U_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
                 unit_I = "uK_RJ",
                 unit_Q = "uK_RJ",
                 unit_U = "uK_RJ",
@@ -322,8 +346,8 @@ class simulations:
             my_dust = pysm3.ModifiedBlackBody(
                 nside = self.nside,
                 map_I = "pysm_2/dust_t_new.fits",
-                map_Q = dust_dir + "Gaussian_forse_dust_Q_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
-                map_U = dust_dir + "Gaussian_forse_dust_U_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
+                map_Q = dust_dir + "Gaussian_forse_dust_Q_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
+                map_U = dust_dir + "Gaussian_forse_dust_U_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
                 unit_I = "uK_RJ",
                 unit_Q = "uK_RJ",
                 unit_U = "uK_RJ",
@@ -335,12 +359,11 @@ class simulations:
             )
 
         if pysm_model == 'Gaussiand9':
-            # print('Gaussian d9 model!')
             my_dust = pysm3.ModifiedBlackBody(
                 nside = self.nside,
                 map_I = "pysm_2/dust_t_new.fits",
-                map_Q = dust_dir + "Gaussian_forse_dust_Q_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
-                map_U = dust_dir + "Gaussian_forse_dust_U_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
+                map_Q = dust_dir + "Gaussian_forse_dust_Q_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
+                map_U = dust_dir + "Gaussian_forse_dust_U_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
                 unit_I = "uK_RJ",
                 unit_Q = "uK_RJ",
                 unit_U = "uK_RJ",
@@ -356,8 +379,8 @@ class simulations:
             my_dust = pysm3.ModifiedBlackBody(
                 nside = self.nside,
                 map_I = "pysm_2/dust_t_new.fits",
-                map_Q = dust_dir + "Gaussian_forse_dust_Q_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
-                map_U = dust_dir + "Gaussian_forse_dust_U_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
+                map_Q = dust_dir + "Gaussian_forse_dust_Q_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
+                map_U = dust_dir + "Gaussian_forse_dust_U_%s%s_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits"%(self.tag, self.name),
                 unit_I = "uK_RJ",
                 unit_Q = "uK_RJ",
                 unit_U = "uK_RJ",
