@@ -167,8 +167,11 @@ class simulations:
             for i in range(Nf):
 
                 # map_all[i] = pysm3.apply_smoothing_and_coord_transform(map_all[i], fwhm=self.fwhms[i]*u.arcmin) + self.noise_maps[i]
-                map_all[i] = hp.smoothing(map_all[i], fwhm = self.fwhms[i]/180/60*np.pi) + noise_maps[i]
-                foreground[i] = hp.smoothing(foreground[i], fwhm = self.fwhms[i]/180/60*np.pi)
+                map_all[i] = hp.smoothing(map_all[i], fwhm = self.fwhms[i]/180/60*np.pi, lmax = 2*self.nside) + noise_maps[i]
+                
+                if not hasattr(self, 'fg'):
+                    # print('here')
+                    foreground[i] = hp.smoothing(foreground[i], fwhm = self.fwhms[i]/180/60*np.pi, lmax = 2*self.nside)
 
                 if noise == 'alms':
                     noise_alms.append(hp.map2alm(np.where(self.mask== 0, hp.UNSEEN, noise_maps[i])))
@@ -179,10 +182,14 @@ class simulations:
                 self.noise_alms = noise_alms
 
             self.map_all = np.where(self.mask== 0, hp.UNSEEN, map_all)
-
-            self.fg = np.where(self.mask== 0, hp.UNSEEN, foreground)
+            
+            if not hasattr(self, 'fg'):
+                self.fg = np.where(self.mask== 0, hp.UNSEEN, foreground)
                     
-        else: # for the case of no foreground, we can just use one pure CMB map, rather than CMB maps at different frequency.
+        else: # for the case of no foreground, we can just use one pure lensed CMB map, rather than CMB maps at different frequency; 
+              # and without beam effect then coadd wth the residual noise maps from other foreground case (which already experienced 
+              #  deconvoling process) 
+            
             self.map_all = self.cmb_len + hp.alm2map(noise_alm, nside=self.nside)
         
     def rescale_forse(self, fres, pysm_model = 'd0'):
