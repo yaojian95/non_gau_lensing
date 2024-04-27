@@ -1,3 +1,5 @@
+cls_path = '/global/homes/j/jianyao/non_gau_lensing/theory/cls/'
+
 import plancklens
 from plancklens.filt import filt_simple, filt_util, filt_cinv
 from plancklens import utils
@@ -15,7 +17,6 @@ from tqdm import tqdm
 import numpy as np
 import healpy as hp
 
-cls_path = '/global/homes/j/jianyao/non_gau_lensing/theory/cls/'
 w = lambda ell : ell ** 2 * (ell + 1.) ** 2 * 0.5 / np.pi * 1e7
 
 cl_unl = utils.camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lenspotentialCls.dat'))
@@ -65,26 +66,19 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
     if lmax_Bmode is None:
         lmax_Bmode = lmax_ivf
 
-    results_phi = []
-    results_n0 = []
-    results_mf = []
-    ells_binned = []
-        
-    results_qlms = []
-    results_qnorms = []
+    ells_binned = []; results_phi = []; results_n0 = []; results_mf = []; results_qlms = []; results_qnorms = []
+    results_n1 = []
     
-    results_phi_fg = []
-    results_n0_fg = []
-    results_qnorms_fg = []
+    results_phi_fg = []; results_n0_fg = []; results_qnorms_fg = []
     
     mask = '/pscratch/sd/j/jianyao/data_lensing/%s_mask_1024.fits'%experiment
     
     for add_foreground in cases:
 
         qnorms = []; nhl_datas = []; qlms = []  
-        qlms_fg = []; nhl_datas_fg = []
+        qlms_fg = []; nhl_datas_fg = []; n1_datas = []
 
-        dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%experiment # SO_LAT/S4_MASK
+        dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%experiment # SO_LAT/S4_LAT
         
         if add_foreground == 'no_fore':
             inv_with_mask = dir_cleaned_cmb + 'Inverse_noise_variance_map_mask_zeros_%s.npy'%'d9' # no foreground cases uses residual noise of pysm_d9 case
@@ -107,7 +101,7 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
 
         cinv_p = filt_cinv.cinv_p(libdir_cinvp, lmax_ivf, nside, cl_len, transf, ninv_Q)
 
-        sims = cmb_noise(cmb_len(add_foreground=add_foreground), transf, nlev_t, nlev_p, nside)
+        sims = cmb_noise(cmb_len(add_foreground=add_foreground, experiment = experiment), transf, nlev_t, nlev_p, nside)
 
         ivfs_raw = filt_cinv.library_cinv_sepTP(libdir_ivfs, sims, cinv_t, cinv_p, cl_len)
         ftl = np.ones(lmax_ivf + 1, dtype=float) * (np.arange(lmax_ivf + 1) >= lmin_ivf) # rescaling or cuts. Here just a lmin cut
@@ -155,13 +149,14 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
             qlms_dd_fg = qest.library_sepTP(os.path.join(TEMP_fg, 'qlms_dd'), ivfs_fg, ivfs_fg, fl_len['te'], nside, lmax_qlm=lmax_qlm)
             nhl_dd_fg = nhl.nhl_lib_simple(os.path.join(TEMP_fg, 'nhl_dd'), ivfs_fg, fl_weight, lmax_qlm)
         
-        #---- N1 lensing bias library:
-        # libdir_n1_dd = os.path.join(TEMP, 'n1_test')
-        # n1_dd = n1.library_n1(libdir_n1_dd,cl_len['tt'],cl_len['te'],cl_len['ee'])
+        # ---- N1 lensing bias library:
+        libdir_n1_dd = os.path.join(TEMP, 'n1_test')
+        n1_dd = n1.library_n1(libdir_n1_dd,cl_len['tt'],cl_len['te'],cl_len['ee'])
 
         #---- QE response calculation library:
+        ftl_calc = ivfs.get_ftl(); fel_calc = ivfs.get_fel(); fbl_calc = ivfs.get_fbl()
         qresp_dd = qresp.resp_lib_simple(os.path.join(TEMP, 'qresp'), lmax_ivf, cl_weight, cl_len,
-                                         {'t': ivfs.get_ftl(), 'e':ivfs.get_fel(), 'b':ivfs.get_fbl()}, lmax_qlm)
+                                         {'t': ftl_calc, 'e':fel_calc, 'b':fbl_calc}, lmax_qlm)
         
         if isinstance(nsim, int):
             nsims = range(nsim)
@@ -193,6 +188,9 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
                     nhl_data = nhl_dd.get_sim_nhl(mc, qe_key, qe_key)
                     nhl_datas.append(nhl_data)
                     
+                    n1_data = n1_dd.get_n1(qe_key, 'p', cl_unl['pp'], ftl_calc, fel_calc, fbl_calc, lmax_qlm)
+                    n1_datas.append(n1_data)
+                    
         ell = np.arange(2 if qe_key[0] == 'x' else 2, lmax_qlm) # qnorms has very large number for \ell = 1; 2023/12/26
         
         if from_fg_res:
@@ -216,6 +214,7 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
         results_n0.append(nhl_datas)
         ells_binned.append(ell)
         results_qnorms.append(qnorm)
+        results_n1.append(n1_datas)
         
         if mc >= 199:
             dir_mf = TEMP+'/mean_field_%s'%qe_keys[0] #once mf are saved, the 0:200 realizations can be left alone, when estimating errors
@@ -226,15 +225,13 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
             
     if from_fg_res:
         
-        return ells_binned, results_phi, results_n0, results_qnorms, qlms_dd.fsky12, results_phi_fg, results_n0_fg, results_qnorms_fg
+        return ells_binned, results_phi, results_n0, results_qnorms, results_n1, qlms_dd.fsky12, results_phi_fg, results_n0_fg, results_qnorms_fg
     
-    return ells_binned, results_phi, results_n0, results_qnorms, qlms_dd.fsky12
-    
-    
+    return ells_binned, results_phi, results_n0, results_qnorms, results_n1, qlms_dd.fsky12
     
 class cmb_len(object):
 
-    def __init__(self, add_foreground, from_fg_res = False, experiment = 'SO_LAT_MASK'):
+    def __init__(self, add_foreground, from_fg_res = False, experiment = 'SO_LAT'):
         
         if add_foreground != 'no_fore':
 
@@ -243,10 +240,10 @@ class cmb_len(object):
             # get an estimation of lensing field from foreground residuals: to test the estimator response to the fg_res
             if from_fg_res: 
                 print('load fg_res')
-                self.alms = dir_cleaned_cmb + 'FG_ilc_alms_from_SO_LAT_%s_HILC_lbins_42x50_lmax_2050_nside_1024'%(add_foreground)
+                self.alms = dir_cleaned_cmb + 'FG_ilc_alms_from_%s_%s_HILC_lbins_42x50_lmax_2050_nside_1024'%(experiment, add_foreground)
                 
             else:
-                self.alms = dir_cleaned_cmb + 'CMB_alms_from_SO_LAT_%s_HILC_lbins_42x50_lmax_2050_nside_1024'%(add_foreground)
+                self.alms = dir_cleaned_cmb + 'CMB_alms_from_%s_%s_HILC_lbins_42x50_lmax_2050_nside_1024'%(experiment, add_foreground)
         
         elif add_foreground == 'no_fore':
             

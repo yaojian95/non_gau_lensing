@@ -193,13 +193,14 @@ def plot_snr(ells, cl_pp_input, results, labels):
     
 dicts = {'no_fore':'No', 'd9':'P_d9', 'forse3_Gaussiand9':'G_d9', 'forse3_d9':'F_d9'} 
 
-def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', plot_mf_cl = False, from_fg_res = False, add_foreground = None, 
-                        return_error = False, binning = ['planck', None], true_binned = None):
+def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', subtract_mf = 'cl', N_mf = 200, plot_mf_cl = False, 
+                        from_fg_res = False, add_foreground = None, return_error = False, binning = ['planck', None], true_binned = None):
     '''
     results_all: output from run_qe function for foreground cases, assumed the mean field is already calculated. 
     set nsim = [200, 500] for run_qe.
     plot_mf_cl only works for subtract_mf = cl case.
     add_foreground: **Mismatch** effect. set this to a foreground case to use this mf to be the mf in the results_all.
+    N_mf: number of realizations to estimate the mean field; can be 100 or 200;
     '''
    
     if qe_key.startswith('x'):
@@ -214,20 +215,11 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
     
     print('plot from dir: %s'%lenre_dir)
     results_all = list(results_all)
-    fsky = results_all.pop(4)
+    fsky = results_all.pop(5)
 
     ell = results_all[0][0]
-    data_errors = []
-    mf_cls = []
+    data_errors = []; mf_cls = []; n0s = []; n1s = [] # for different fore cases
     labels = [dicts[case] for case in cases]
-    
-    # case_i = 0
-    # for fore in list(zip(*results_all)):
-    #     if not add_foreground:
-    #         TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
-    #     data_errors.append(get_variance(fore, fsky, subtract_mf = 'alm', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0, binning = binning))
-    #     case_i += 1
-    # _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at alm, lmaxBmode = %s'%(qe_key, lmaxBmode), true_binned = true_binned)
 
     case_i = 0
     data_errors = []
@@ -235,15 +227,16 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
         if not add_foreground:
             TEMP =  lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
         
-        error_mf = get_variance(fore, fsky, subtract_mf = 'cl', mf= TEMP+'/mean_field_%s/mf_200_%s.fits'%(qe_key, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl, binning = binning)
+        error_mf = get_variance(fore, fsky, subtract_mf = subtract_mf, mf= TEMP+'/mean_field_%s/mf_%s_%s.fits'%(qe_key, N_mf, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl, binning = binning)
         
         if plot_mf_cl:
-            data_error, mf_cl = error_mf 
+            data_error, mf_cl, n0, n1 = error_mf 
             mf_cls.append(mf_cl)
         else:
-            data_error = error_mf
+            data_error, n0, n1 = error_mf
             
         data_errors.append(data_error)
+        n0s.append(n0); n1s.append(n1)
         case_i += 1
     
     if plot_mf_cl:
@@ -256,11 +249,11 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
                 for i in range(len(mf_cls[0])):
                     f.write(str(ell[i]) + ' ' + str(mf_cls[0][i]) + ' ' + str(mf_cls[1][i]) + ' ' + str(mf_cls[2][i]) + ' ' + str(mf_cls[3][i]) + '\n')
                 
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), mf_cls = mf_cls, true_binned = true_binned)
-        
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), mf_cls = mf_cls, n0s = n0s, n1s = n1s, true_binned = true_binned)
+        # print(n0s)
     else:
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at cl, lmaxBmode = %s'%(qe_key, lmaxBmode), true_binned = true_binned)
-    
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), n0s = n0s, n1s = n1s, true_binned = true_binned)
+        
     if from_fg_res:
         data_errors = []
         for fore in list(zip(*results_all)):
@@ -293,13 +286,14 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
     
     '''
     
-    ell, qlms, nhl_data, qnorm = results[0], results[1], results[2][0], results[3]
+    ell, qlms, nhl_data, qnorm, n1_data = results[0], results[1], results[2][0], results[3], results[4][0]
     ell = np.arange(1000); # 2024/4/14: bin_cell starts from 2. so the input should have ell = 0 and 1.
     
     kswitch = w(ell)
     fsky = fsky
     weights_phi = qnorm[ell] ** 2 / fsky 
     n0 = nhl_data[ell] * qnorm[ell] ** 2
+    n1 = n1_data[ell] * qnorm[ell] ** 2
     
     func = binning[1]
     
@@ -331,10 +325,10 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
     for i in range(nstart, len(qlms)):
         
         if subtract_mf == 'alm':
-            cleaned_my_i = (hp.alm2cl(qlms[i] - mf_alm)[ell])*weights_phi - n0 # n0 and qnorm are the same for every realization
+            cleaned_my_i = (hp.alm2cl(qlms[i] - mf_alm)[ell])*weights_phi - n0 - n1 # n0 and qnorm are the same for every realization
             
         else:
-            cleaned_my_i = (hp.alm2cl(qlms[i])[ell])*weights_phi - n0
+            cleaned_my_i = (hp.alm2cl(qlms[i])[ell])*weights_phi - n0 - n1
         
         if from_fg_res:
             assert subtract_mf is None, 'subtract_mf should be None while fg_res, but it is %s'%subtract_mf
@@ -373,11 +367,12 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
         ydata = cleaned_mean
         yerr = np.array([cleaned_std, cleaned_std])        
     
+    # print(n1*kswitch)
     if return_mf_cl:
         assert not from_fg_res, 'mean field and fg_res should not be estimated simultaneously.'
-        return [xdata, ydata, xerr, yerr], mf_cl*kswitch
+        return [xdata, ydata, xerr, yerr], mf_cl*kswitch, n0*kswitch, n1*kswitch
     
-    return [xdata, ydata, xerr, yerr]
+    return [xdata, ydata, xerr, yerr], n0*kswitch, n1*kswitch
 
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
@@ -429,7 +424,7 @@ def get_variance_fg_res(results, fsky):
     
     return [xdata, ydata, xerr, yerr]
 
-def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, true_binned = None):
+def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, n0s = None, n1s = None, true_binned = None):
     '''
     data_error: [[xdata, ydata, xerr, yerr]]
     kind: box or bar
@@ -473,6 +468,11 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
             if mf_cls:
                 axes[0].semilogx(ell, mf_cls[i][ell], color = facecolor, ls = '--')
             
+            if n0s is not None:
+                axes[0].semilogx(ell, n0s[i][ell], color = facecolor, ls = '-', alpha = 0.5)
+            if n1s is not None:
+                axes[0].semilogx(ell, n1s[i][ell], color = facecolor, ls = '--', alpha = 0.5)
+            
             axes[1].scatter(data_error[i][0]  + i*0.5, (data_error[i][1] - true_binned)/data_error[i][3][0], s = 20, c = facecolor, alpha = 0.8)
             
             # axes[1].errorbar(data_error[i][0] + i*3, (data_error[i][1] - true_binned[0])/true_binned[0]*100, xerr = data_error[i][2][0], 
@@ -504,6 +504,7 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
     
 def plot_variance_x(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'linear', set_ylim = True, mf_cls = None):
     '''
+    for curl part.
     data_error: [[xdata, ydata, xerr, yerr]]
     kind: box or bar
     '''
