@@ -71,14 +71,14 @@ def run_qe(qe_keys, cases, nside = 1024, lmin_ivf = 100, lmax_ivf = 2000, lmax_q
     
     results_phi_fg = []; results_n0_fg = []; results_qnorms_fg = []
     
-    mask = '/pscratch/sd/j/jianyao/data_lensing/%s_mask_1024.fits'%experiment
+    mask = '/pscratch/sd/j/jianyao/data_lensing/%s_mask_1024.fits'%experiment[0:6] # S4_LAT_N1 has the same mask as S4_LAT
     
     for add_foreground in cases:
 
         qnorms = []; nhl_datas = []; qlms = []  
         qlms_fg = []; nhl_datas_fg = []; n1_datas = []
 
-        dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%experiment # SO_LAT/S4_LAT
+        dir_cleaned_cmb = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%experiment[0:6] # S4_LAT_N1 has the same inv as S4_LAT
         
         if add_foreground == 'no_fore':
             inv_with_mask = dir_cleaned_cmb + 'Inverse_noise_variance_map_mask_zeros_%s.npy'%'d9' # no foreground cases uses residual noise of pysm_d9 case

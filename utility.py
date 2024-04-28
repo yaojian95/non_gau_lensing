@@ -230,10 +230,10 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
         error_mf = get_variance(fore, fsky, subtract_mf = subtract_mf, mf= TEMP+'/mean_field_%s/mf_%s_%s.fits'%(qe_key, N_mf, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl, binning = binning)
         
         if plot_mf_cl:
-            data_error, mf_cl, n0, n1 = error_mf 
+            data_error, mf_cl, n0, n1, mc_mf = error_mf 
             mf_cls.append(mf_cl)
         else:
-            data_error, n0, n1 = error_mf
+            data_error, n0, n1, mc_mf = error_mf
             
         data_errors.append(data_error)
         n0s.append(n0); n1s.append(n1)
@@ -249,10 +249,10 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
                 for i in range(len(mf_cls[0])):
                     f.write(str(ell[i]) + ' ' + str(mf_cls[0][i]) + ' ' + str(mf_cls[1][i]) + ' ' + str(mf_cls[2][i]) + ' ' + str(mf_cls[3][i]) + '\n')
                 
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), mf_cls = mf_cls, n0s = n0s, n1s = n1s, true_binned = true_binned)
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), mf_cls = mf_cls, n0s = n0s, n1s = n1s, mc_mf = mc_mf, true_binned = true_binned)
         # print(n0s)
     else:
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), n0s = n0s, n1s = n1s, true_binned = true_binned)
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), n0s = n0s, n1s = n1s, mc_mf = mc_mf, true_binned = true_binned)
         
     if from_fg_res:
         data_errors = []
@@ -321,7 +321,7 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
     
         mf_cl = (hp.alm2cl(mf_alm)[ell])*weights_phi
     
-    cleaned_my = []
+    cleaned_my = []; mc_mfs = []
     for i in range(nstart, len(qlms)):
         
         if subtract_mf == 'alm':
@@ -329,7 +329,7 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
             
         else:
             cleaned_my_i = (hp.alm2cl(qlms[i])[ell])*weights_phi - n0 - n1
-        
+
         if from_fg_res:
             assert subtract_mf is None, 'subtract_mf should be None while fg_res, but it is %s'%subtract_mf
             returned_fg = (hp.alm2cl(qlms_fg[i])[ell])* weights_phi - n0_fg 
@@ -340,15 +340,19 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
         else:
             returned_fg = 0
         
+        mc_mf = (cleaned_my_i + n0)/200
+        mc_mfs.append(mc_mf)
+        debiased = cleaned_my_i - returned_fg - mc_mf
+        
         if binning[0] == 'my':
-            ell_binned, cleaned_binned_i =  func((cleaned_my_i - returned_fg)*kswitch, lmax = bins[-1], bins = bins, ell_2=False)  
+            ell_binned, cleaned_binned_i =  func((debiased)*kswitch, lmax = bins[-1], bins = bins, ell_2=False)  
             
         elif binning[0] == 'planck': # kswitch is already included in planck binner
-            ell_binned, cleaned_binned_i =  func(cleaned_my_i - returned_fg) 
+            ell_binned, cleaned_binned_i =  func(debiased) 
         
         elif binning[0] == 'toshiyan':
             assert len(binning) == 3, len(binning)
-            ell_binned, cleaned_binned_i =  binning[2].bc, func((cleaned_my_i - returned_fg)*kswitch, binning[2]) 
+            ell_binned, cleaned_binned_i =  binning[2].bc, func((debiased)*kswitch, binning[2]) 
             
         cleaned_my.append(cleaned_binned_i)
         
@@ -370,9 +374,9 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
     # print(n1*kswitch)
     if return_mf_cl:
         assert not from_fg_res, 'mean field and fg_res should not be estimated simultaneously.'
-        return [xdata, ydata, xerr, yerr], mf_cl*kswitch, n0*kswitch, n1*kswitch
+        return [xdata, ydata, xerr, yerr], mf_cl*kswitch, n0*kswitch, n1*kswitch, mc_mf*kswitch
     
-    return [xdata, ydata, xerr, yerr], n0*kswitch, n1*kswitch
+    return [xdata, ydata, xerr, yerr], n0*kswitch, n1*kswitch, mc_mf*kswitch
 
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
@@ -424,7 +428,7 @@ def get_variance_fg_res(results, fsky):
     
     return [xdata, ydata, xerr, yerr]
 
-def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, n0s = None, n1s = None, true_binned = None):
+def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, n0s = None, n1s = None, mc_mf = None, true_binned = None):
     '''
     data_error: [[xdata, ydata, xerr, yerr]]
     kind: box or bar
@@ -462,6 +466,7 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
     if kind == 'bar':
         for i in range(len(data_error)):
             facecolor = colors[i]
+             
             axes[0].errorbar(data_error[i][0] + i*0.5, data_error[i][1], yerr = data_error[i][3][0], 
                           ecolor = colors[i], label = '%s'%labels[i], fmt='o') #xerr = data_error[i][2][0],
             
@@ -472,6 +477,8 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
                 axes[0].semilogx(ell, n0s[i][ell], color = facecolor, ls = '-', alpha = 0.5)
             if n1s is not None:
                 axes[0].semilogx(ell, n1s[i][ell], color = facecolor, ls = '--', alpha = 0.5)
+            if mc_mf is not None:
+                axes[0].semilogx(ell, mc_mf[ell], color = facecolor, ls = '-', alpha = 0.2)
             
             axes[1].scatter(data_error[i][0]  + i*0.5, (data_error[i][1] - true_binned)/data_error[i][3][0], s = 20, c = facecolor, alpha = 0.8)
             
