@@ -47,7 +47,7 @@ class simulations:
         else:
             self.name = "_masked"
         
-    def get_all(self, add_foreground = 'd0', noise = 'alms', use_phi_alm = False, index = 0):
+    def get_all(self, add_foreground = 'd0', noise = 'alms', use_phi_alm = False, index = 0, fix_phi = False):
 
         '''
         return one realization of (lensed CMB + foreground) with the beam applied + noise, 
@@ -58,9 +58,12 @@ class simulations:
         '''
 
         cmb_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/cmb/'
-        
-        if not os.path.exists(cmb_dir + 'unlensed_CMB_map_%04d.fits'%index):
-            # assuming both lensed CMB and unlensed CMB maps are not saved
+        if fix_phi:
+            cmb_name = 'lensed_CMB_map_fix_lens'
+        else:
+            cmb_name = 'lensed_CMB_map'
+            
+        if not os.path.exists(cmb_dir + '%s_%04d.fits'%(cmb_name, index)):
             
             cl_unl = camb_clfile(os.path.join(cls_path, 'FFP10_wdipole_lenspotentialCls.dat'))
             geom_info = ('healpix', {'nside':self.nside}) # Geometry parametrized as above, this is the default
@@ -69,28 +72,45 @@ class simulations:
             epsilon = 1e-6
 
             if use_phi_alm is False:
+                assert fix_phi is False, 'fix_phi shoule be False, but instead %s'%sfix_phi
+                
                 cmb_temp = synfast(cl_unl, lmax=lmax_unl, verbose=0, geometry=geom_info, alm = False)
                 self.cmb_len = np.row_stack((cmb_temp['T'], cmb_temp['QU'])) # (3, 12*nside**2)
 
             elif use_phi_alm is True:
+                
+                if not os.path.exists(cmb_dir + 'unlensed_CMB_map_%04d.fits'%index):
+                    tlm_unl = synalm(cl_unl['tt'], lmax=lmax_unl, mmax=mmax_unl)
+                    elm_unl = synalm(cl_unl['ee'], lmax=lmax_unl, mmax=mmax_unl)
+                    blm_unl = synalm(cl_unl['bb'], lmax=lmax_unl, mmax=mmax_unl)
 
+                    cmb_unlen = hp.alm2map((tlm_unl, elm_unl, blm_unl), nside = self.nside)
+                    hp.write_map(cmb_dir + 'unlensed_CMB_map_%04d.fits'%index, cmb_unlen) 
+                else: 
+                    cmb_unlen = hp.read_map(cmb_dir + 'unlensed_CMB_map_%04d.fits'%index, field = None)
+                    tlm_unl, elm_unl, blm_unl = hp.map2alm(cmb_unlen, lmax= lmax_unl, mmax = mmax_unl)
+                
                 phi_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/phi_alms/'
-                phi_name = phi_dir + 'phi_%04d.fits'%index
+                if fix_phi:
+                    if index == 0:
+                        print('phi field is fixed in the following simulations')
+                    phi_name = phi_dir + 'phi_%04d.fits'%0
+                    if os.path.exists(phi_name):
+                        plm = hp.read_alm(phi_name)
 
-                tlm_unl = synalm(cl_unl['tt'], lmax=lmax_unl, mmax=mmax_unl)
-                elm_unl = synalm(cl_unl['ee'], lmax=lmax_unl, mmax=mmax_unl)
-                blm_unl = synalm(cl_unl['bb'], lmax=lmax_unl, mmax=mmax_unl)
-
-                cmb_unlen = hp.alm2map((tlm_unl, elm_unl, blm_unl), nside = self.nside)
-                hp.write_map(cmb_dir + 'unlensed_CMB_map_%04d.fits'%index, cmb_unlen)
-
-                if os.path.exists(phi_name):
-                    plm = hp.read_alm(phi_name)
-
+                    else:
+                        plm = synalm(cl_unl['pp'], lmax=lmax_unl, mmax=mmax_unl)
+                        hp.write_alm(phi_name, plm)
+                
                 else:
-                    plm = synalm(cl_unl['pp'], lmax=lmax_unl, mmax=mmax_unl)
-                    hp.write_alm(phi_name, plm)
+                    phi_name = phi_dir + 'phi_%04d.fits'%index
+                    if os.path.exists(phi_name):
+                        plm = hp.read_alm(phi_name)
 
+                    else:
+                        plm = synalm(cl_unl['pp'], lmax=lmax_unl, mmax=mmax_unl)
+                        hp.write_alm(phi_name, plm)
+                    
                 # We then transform the lensing potential into spin-1 deflection field, and deflect the temperature map.
                 dlm = almxfl(plm, np.sqrt(np.arange(lmax_unl + 1, dtype=float) * np.arange(1, lmax_unl + 2)), None, False)
 
@@ -98,19 +118,19 @@ class simulations:
 
                 self.cmb_len = np.row_stack((Tlen, Qlen, Ulen)) 
                 
-                hp.write_map(cmb_dir + 'lensed_CMB_map_%04d.fits'%index, self.cmb_len)
+                hp.write_map(cmb_dir + '%s_%04d.fits'%(cmb_name, index), self.cmb_len)
                 
         else:
-            self.cmb_len = hp.read_map(cmb_dir + 'lensed_CMB_map_%04d.fits'%index, field = None)
+            self.cmb_len = hp.read_map(cmb_dir + '%s_%04d.fits'%(cmb_name, index), field = None)
 
         Nf = self.fres.size
         cmb_maps = np.repeat(self.cmb_len[np.newaxis, :, :], Nf, axis = 0)
         
         ########## simulate noise ##############        
-        if add_foreground != 'no_fore': 
+        if add_foreground != 'no_fore' and add_foreground != 'no_fore_full': 
             noise_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/noise/%s/'%self.tag
             if not os.path.exists(noise_dir + 'noise_freq_%04d.npy'%index):
-                noise_maps = get_noise_realization(self.nside, instrument, unit='uK_CMB')
+                noise_maps = get_noise_realization(self.nside, self.instrument, unit='uK_CMB')
 
                 np.save(noise_dir + 'noise_freq_%04d.npy'%index, noise_maps)
 
@@ -121,7 +141,7 @@ class simulations:
                 noise_maps_end = []
                 N = 20
                 for n in range(N):
-                    noise_map_i = get_noise_realization(self.nside, instrument, unit='uK_CMB')
+                    noise_map_i = get_noise_realization(self.nside, self.instrument, unit='uK_CMB')
                     noise_maps_end.append(noise_map_i)
 
                 self.extra_noise = noise_maps_end
@@ -132,10 +152,15 @@ class simulations:
             # we could use the noise_ilc_maps directly!!! 2024-4-4
             noise_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/cleaned_CMB/%s_MASK/'%self.tag # this case for the SO_LAT_masked case
             noise_alm = hp.read_alm(noise_dir + 'Noise_ilc_alms_from_%s_d9_HILC_lbins_42x50_lmax_2050_nside_1024_%04d.fits'%(self.tag, index), hdu = [1, 2, 3])
-            
+        
+        elif add_foreground == 'no_fore_full':
+            # no_fore for full-sky case
+            noise_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/noise/%s/'%self.tag
+            noise_maps = np.load(noise_dir + 'noise_freq_%04d.npy'%index)
+               
         ######## simulate foreground ############
         
-        if add_foreground != 'no_fore':
+        if add_foreground != 'no_fore' and add_foreground != 'no_fore_full':
             fg_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/foreground/%s/'%self.tag
 
             if 'Gaussian' in add_foreground:
@@ -148,7 +173,7 @@ class simulations:
                 if add_foreground.startswith('d'):
                     # for pysm3 pre-defined models
                     sky = pysm3.Sky(self.nside, preset_strings = [add_foreground])
-                    foreground = get_observation(instrument, sky = sky, nside=self.nside, noise=False, unit='uK_CMB')
+                    foreground = get_observation(self.instrument, sky = sky, nside=self.nside, noise=False, unit='uK_CMB')
 
                 elif add_foreground.startswith('forse'):
 
@@ -186,11 +211,15 @@ class simulations:
             if not hasattr(self, 'fg'):
                 self.fg = np.where(self.mask== 0, hp.UNSEEN, foreground)
                     
-        else: # for the case of no foreground, we can just use one pure lensed CMB map, rather than CMB maps at different frequency; 
+        elif add_foreground == 'no_fore': 
+              # for the case of no foreground, we can just use one pure lensed CMB map, rather than CMB maps at different frequency; 
               # and without beam effect then coadd wth the residual noise maps from other foreground case (which already experienced 
               #  deconvoling process) 
-            
             self.map_all = self.cmb_len + hp.alm2map(noise_alm, nside=self.nside)
+            
+        elif add_foreground == 'no_fore_full':
+            # print(noise_maps.shape)
+            self.map_all = self.cmb_len + noise_maps[4]
         
     def rescale_forse(self, fres, pysm_model = 'd0'):
         '''
@@ -318,7 +347,7 @@ class simulations:
         if pysm_model == 'd10':
             my_dust = pysm3.ModifiedBlackBody(
                 nside = self.nside,
-                map_I = "pysm_2/dusts_t_new.fits",
+                map_I = "pysm_2/dust_t_new.fits",
                 map_Q = dust_dir + "forse_dust_Q_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
                 map_U = dust_dir + "forse_dust_U_353GHz_deconvolved_lmax_4096_nside4096_uK_RJ.fits",
                 unit_I = "uK_RJ",
