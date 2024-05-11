@@ -191,10 +191,10 @@ def plot_snr(ells, cl_pp_input, results, labels):
     
     plt.legend()
     
-dicts = {'no_fore':'No', 'd9':'P_d9', 'forse3_Gaussiand9':'G_d9', 'forse3_d9':'F_d9'} 
+dicts = {'no_fore':'No', 'd9':'P_d9', 'forse3_Gaussiand9':'G_d9', 'forse3_d9':'F_d9', 'no_fore_full':'No_full'} 
 
 def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experiment = 'SO_LAT_MASK', subtract_mf = 'cl', N_mf = 200, plot_mf_cl = False, 
-                        from_fg_res = False, add_foreground = None, return_error = False, binning = ['planck', None], true_binned = None):
+                        from_fg_res = False, add_foreground = None, return_error = False, binning = ['planck', None], true_binned = None, debias_n1 = False, debias_mcmf = False, xlim = 1000):
     '''
     results_all: output from run_qe function for foreground cases, assumed the mean field is already calculated. 
     set nsim = [200, 500] for run_qe.
@@ -208,7 +208,10 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
     else:
         _plot_variance = plot_variance # o.w. python will set plot_variance as local variable and the global 'plot_variance' defined below shoule not be used.
     
-    lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s_cinv/'%experiment
+    if experiment[-4:] == 'MASK':
+        lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s_cinv/'%experiment
+    elif experiment[-4:] == 'full':
+        lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s/'%experiment
     
     if add_foreground:
         TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(add_foreground, 100, 2000, 'p_eb', lmaxBmode)
@@ -227,7 +230,7 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
         if not add_foreground:
             TEMP =  lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(cases[case_i], 100, 2000, 'p_eb', lmaxBmode)
         
-        error_mf = get_variance(fore, fsky, subtract_mf = subtract_mf, mf= TEMP+'/mean_field_%s/mf_%s_%s.fits'%(qe_key, N_mf, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl, binning = binning)
+        error_mf = get_variance(fore, fsky, subtract_mf = subtract_mf, mf= TEMP+'/mean_field_%s/mf_%s_%s.fits'%(qe_key, N_mf, qe_key), Nsim_mf = 0, return_mf_cl = plot_mf_cl, binning = binning, debias_n1 = debias_n1, debias_mcmf = debias_mcmf)
         
         if plot_mf_cl:
             data_error, mf_cl, n0, n1, mc_mf = error_mf 
@@ -239,6 +242,11 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
         n0s.append(n0); n1s.append(n1)
         case_i += 1
     
+    if not debias_n1:
+        n1 = None
+    if not debias_mcmf:
+        mc_mf = None
+    
     if plot_mf_cl:
         mf_data = 'mean_filed_lmin_%s_lmax_%s_%s_lmax_Bmode_%s.dat'%(100, 2000, qe_key, lmaxBmode)
         if not os.path.exists(mf_data):
@@ -249,10 +257,10 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
                 for i in range(len(mf_cls[0])):
                     f.write(str(ell[i]) + ' ' + str(mf_cls[0][i]) + ' ' + str(mf_cls[1][i]) + ' ' + str(mf_cls[2][i]) + ' ' + str(mf_cls[3][i]) + '\n')
                 
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), mf_cls = mf_cls, n0s = n0s, n1s = n1s, mc_mf = mc_mf, true_binned = true_binned)
-        # print(n0s)
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), mf_cls = mf_cls, n0s = n0s, n1s = n1s, mc_mf = mc_mf, true_binned = true_binned, xlim = xlim)
+
     else:
-        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), n0s = n0s, n1s = n1s, mc_mf = mc_mf, true_binned = true_binned)
+        _plot_variance(ell, data_errors, labels = labels, kind = 'bar', title = '%s, Subtracting MF at %s, lmaxBmode = %s'%(qe_key, subtract_mf, lmaxBmode), n0s = n0s, n1s = n1s, mc_mf = mc_mf, true_binned = true_binned, xlim = xlim)
         
     if from_fg_res:
         data_errors = []
@@ -270,7 +278,7 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
 
 
 def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, return_mf_cl = False, 
-                 binning = ['my',None, None], from_fg_res = False):
+                 binning = ['my',None, None], from_fg_res = False, debias_n1 = False, debias_mcmf = False):
     '''
     Get errors for ONE foreground case
     
@@ -295,6 +303,9 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
     n0 = nhl_data[ell] * qnorm[ell] ** 2
     n1 = n1_data[ell] * qnorm[ell] ** 2
     
+    if not debias_n1:
+        n1 = 0
+    
     func = binning[1]
     
     if binning[0] == 'toshiyan':
@@ -312,7 +323,7 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
         n0_fg = nhl_data_fg[ell] * qnorm_fg[ell] ** 2 
         
     else:
-        assert subtract_mf is not None, subtract_mf
+        # assert subtract_mf is not None, subtract_mf
         if isinstance(mf, str):
             mf_alm = hp.read_alm(mf)
             
@@ -326,7 +337,7 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
         
         if subtract_mf == 'alm':
             cleaned_my_i = (hp.alm2cl(qlms[i] - mf_alm)[ell])*weights_phi - n0 - n1 # n0 and qnorm are the same for every realization
-            
+            returned_fg = 0
         else:
             cleaned_my_i = (hp.alm2cl(qlms[i])[ell])*weights_phi - n0 - n1
 
@@ -337,11 +348,18 @@ def get_variance(results, fsky, subtract_mf = None, mf = None, Nsim_mf = None, r
         elif subtract_mf == 'cl':
             returned_fg = mf_cl
         
-        else:
+        elif subtract_mf is None: # not subtracting MF
+            mf_cl = 0
             returned_fg = 0
-        
-        mc_mf = (cleaned_my_i + n0)/200
+            if i == (len(qlms) -1):
+                print('Not subtracting MF!')
+            
+        mc_mf = (cleaned_my_i + n0)/200 # use theory cl_phiphi
         mc_mfs.append(mc_mf)
+        
+        if not debias_mcmf:
+            mcmf = 0
+            
         debiased = cleaned_my_i - returned_fg - mc_mf
         
         if binning[0] == 'my':
@@ -428,14 +446,16 @@ def get_variance_fg_res(results, fsky):
     
     return [xdata, ydata, xerr, yerr]
 
-def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, n0s = None, n1s = None, mc_mf = None, true_binned = None):
+def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale = 'log', yscale = 'log', set_ylim = True, mf_cls = None, n0s = None, n1s = None, mc_mf = None, 
+                  true_binned = None, xlim = 1000):
     '''
     data_error: [[xdata, ydata, xerr, yerr]]
     kind: box or bar
     '''
     # Create figure and axes
     fig, axes = plt.subplots(2, 1, sharex=True, figsize = (10, 8),  gridspec_kw={'height_ratios':[3,1]})
-    axes[0].plot(ell, cl_unl['pp'][ell]* w(ell), 'k-')
+    axes[0].plot(ell, cl_unl['pp'][ell]* w(ell), 'k--')
+    axes[0].plot(data_error[0][0], true_binned, 'k-')
     
     if kind == 'box':
         edgecolor='none'
@@ -486,7 +506,8 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
                              # yerr = data_error[i][3][0]/true_binned[0]*100, ecolor = colors[i], ls='none')
             
         axes[0].legend(frameon = False)
-    axes[0].set_xlim(2, 1000)
+    axes[0].set_xlim(2, xlim)
+    axes[1].set_xlim(2, xlim)
     if set_ylim:
         axes[0].set_ylim(1e-3, 10)
         # axes[0].set_ylim(1e-10, 1e-6)
@@ -505,7 +526,7 @@ def plot_variance(ell, data_error, labels, kind = 'box', title = 'Title', xscale
     axes[1].axhline(y=1, color='k', linestyle='--', alpha = 0.4)
     axes[1].axhline(y=3, color='k', linestyle='--', alpha = 0.4)
     axes[1].set_yticks(np.array((-3, -1, 0, 1, 3)))
-    # axes[1].set_ylim(-10, 100)
+    axes[1].set_ylim(-3, 3)
     fig.subplots_adjust(hspace=0)
     
     
