@@ -208,10 +208,11 @@ def plot_errors_from_mf(cases, results_all, lmaxBmode, qe_key = 'p_eb', experime
     else:
         _plot_variance = plot_variance # o.w. python will set plot_variance as local variable and the global 'plot_variance' defined below shoule not be used.
     
-    if experiment[-4:] == 'MASK':
-        lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s_cinv/'%experiment
-    elif experiment[-4:] == 'full':
+    if experiment[-4:] == 'full':
         lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s/'%experiment
+        
+    else:
+        lenre_dir = '/pscratch/sd/j/jianyao/data_lensing/lenre_results/%s_cinv/'%experiment
     
     if add_foreground:
         TEMP = lenre_dir + 'cleaned_cmb_%s_lmin_%s_lmax_%s_%s_lmax_Bmode_%s'%(add_foreground, 100, 2000, 'p_eb', lmaxBmode)
