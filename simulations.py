@@ -164,9 +164,9 @@ class simulations:
             fg_dir = '/pscratch/sd/j/jianyao/data_lensing/simulations/foreground/%s/'%self.tag
 
             if 'Gaussian' in add_foreground:
-                fg_name = fg_dir + 'fg_%s%s_freq_%04d.npy'%(add_foreground, self.name, 0)
+                fg_name = fg_dir + 'fg_%s%s_freq_%04d.npy'%(add_foreground, self.name, index)
             else:
-                fg_name = fg_dir + 'fg_%s_freq_%04d.npy'%(add_foreground, 0)
+                fg_name = fg_dir + 'fg_%s_freq_%04d.npy'%(add_foreground, index)
 
             if not os.path.exists(fg_name): # for now, only have one realization for foreground
 
@@ -215,7 +215,8 @@ class simulations:
               # for the case of no foreground, we can just use one pure lensed CMB map, rather than CMB maps at different frequency; 
               # and without beam effect then coadd wth the residual noise maps from other foreground case (which already experienced 
               #  deconvoling process) 
-            self.map_all = self.cmb_len + hp.alm2map(noise_alm, nside=self.nside)
+            map_all = self.cmb_len + hp.alm2map(noise_alm, nside=self.nside)
+            self.map_all = np.where(self.mask== 0, hp.UNSEEN, map_all)
             
         elif add_foreground == 'no_fore_full':
             # print(noise_maps.shape)
